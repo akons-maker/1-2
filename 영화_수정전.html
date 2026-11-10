@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>나의 영화 티어리스트</title>
+<style>
+:root{
+  --bg:#f6f5f2;--surface:#ffffff;--text:#1c1b19;--muted:#6b6862;--line:#e3e0d9;
+  --s:#e5484d;--a:#f08a24;--b:#e5b800;--c:#3e9b6b;--accent:#2f6fed;
+  color-scheme:light;
+}
+@media (prefers-color-scheme:dark){
+  :root{
+    --bg:#141413;--surface:#1f1e1c;--text:#f1efea;--muted:#a09c94;--line:#33312e;
+    --s:#ff6b6f;--a:#ffa04a;--b:#f2c92e;--c:#58c58f;--accent:#6c9bff;color-scheme:dark;
+  }
+}
+*,*::before,*::after{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);
+  font-family:"Pretendard","Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;line-height:1.4}
+main{max-width:1000px;margin:0 auto;padding:28px 16px 48px}
+header{display:flex;flex-wrap:wrap;align-items:flex-end;justify-content:space-between;gap:12px;margin-bottom:20px}
+h1{font-size:clamp(1.6rem,5vw,2.4rem);margin:0 0 4px;letter-spacing:-.02em}
+.sub{color:var(--muted);margin:0;font-size:.95rem}
+button{font:inherit;font-size:.9rem;padding:8px 14px;border-radius:8px;border:1px solid var(--line);
+  background:var(--surface);color:var(--text);cursor:pointer}
+button:hover{border-color:var(--accent);color:var(--accent)}
+.tier{display:flex;background:var(--surface);border:1px solid var(--line);border-radius:14px;overflow:hidden;margin-bottom:12px;transition:border-color .15s}
+.tier.over{border-color:var(--accent);box-shadow:0 0 0 2px var(--accent)}
+.label{flex:0 0 64px;display:flex;align-items:center;justify-content:center;font-size:2rem;font-weight:800;color:#fff;background:var(--tc)}
+.cards{flex:1;min-height:150px;display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:10px;padding:12px;align-content:start}
+.cards:empty::before{content:"여기로 영화를 끌어다 놓으세요";grid-column:1/-1;color:var(--muted);font-size:.85rem;align-self:center;text-align:center;padding:40px 0}
+.card{margin:0;cursor:grab;touch-action:none;user-select:none;-webkit-user-select:none}
+.card.drag{opacity:.35}
+.poster{aspect-ratio:2/3;border-radius:8px;display:flex;flex-direction:column;justify-content:flex-end;padding:8px;
+  color:#fff;background:linear-gradient(160deg,hsl(var(--h) 55% 38%),hsl(calc(var(--h) + 40) 60% 20%));
+  border-bottom:4px solid var(--tc);box-shadow:0 1px 3px rgba(0,0,0,.25)}
+.poster small{opacity:.8;font-size:.7rem}
+.poster b{font-size:.9rem;line-height:1.25;word-break:keep-all}
+.title{margin-top:6px;font-size:.82rem;font-weight:600;text-align:center;word-break:keep-all}
+.ghost{position:fixed;z-index:1000;pointer-events:none;width:104px;opacity:.92;transform:rotate(3deg);
+  filter:drop-shadow(0 8px 14px rgba(0,0,0,.4))}
+@media (max-width:520px){
+  .label{flex-basis:44px;font-size:1.5rem}
+  .cards{grid-template-columns:repeat(3,1fr);gap:8px;padding:10px}
+}
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>나의 영화 티어리스트</h1>
+      <p class="sub">카드를 끌어서 원하는 티어로 옮기거나 순서를 바꿔 보세요. 변경 내용은 자동으로 저장돼요.</p>
+    </div>
+    <button id="reset" type="button">처음 상태로 되돌리기</button>
+  </header>
+  <div id="list"></div>
+</main>
+<script>
+const MOVIES = {
+  m1:["기생충",2019], m2:["올드보이",2003], m3:["인터스텔라",2014], m4:["쇼생크 탈출",1994],
+  m5:["매트릭스",1999], m6:["인셉션",2010], m7:["파이트 클럽",1999], m8:["센과 치히로의 행방불명",2001],
+  m9:["살인의 추억",2003], m10:["다크 나이트",2008], m11:["라라랜드",2016], m12:["어바웃 타임",2013],
+  m13:["마션",2015], m14:["조커",2019], m15:["트루먼 쇼",1998], m16:["어벤져스: 엔드게임",2019],
+  m17:["아바타",2009], m18:["트랜스포머",2007], m19:["캐리비안의 해적",2003], m20:["미션 임파서블 2",2000]
+};
+const TIERS = [
+  {t:"S", c:"var(--s)"}, {t:"A", c:"var(--a)"}, {t:"B", c:"var(--b)"}, {t:"C", c:"var(--c)"}
+];
+const DEFAULT = {
+  S:["m1","m2","m3","m4"],
+  A:["m5","m6","m7","m8","m9","m10"],
+  B:["m11","m12","m13","m14","m15","m16"],
+  C:["m17","m18","m19","m20"]
+};
+const KEY = "movieTierlist.v1";
+let state = load();
+
+function load(){
+  try{
+    const raw = localStorage.getItem(KEY);
+    if(raw){
+      const s = JSON.parse(raw);
+      const ids = Object.values(s).flat();
+      if(ids.length === 20 && new Set(ids).size === 20 && ids.every(id => MOVIES[id]) && TIERS.every(x => Array.isArray(s[x.t]))) return s;
+    }
+  }catch(e){}
+  return JSON.parse(JSON.stringify(DEFAULT));
+}
+function save(){ try{ localStorage.setItem(KEY, JSON.stringify(state)); }catch(e){} }
+
+const root = document.getElementById("list");
+function hueOf(id){ return (parseInt(id.slice(1),10) * 47 + 210) % 360; }
+
+function makeCard(id, tierColor){
+  const [name, yr] = MOVIES[id];
+  const fig = document.createElement("figure");
+  fig.className = "card"; fig.dataset.id = id;
+  fig.style.setProperty("--tc", tierColor);
+  const poster = document.createElement("div");
+  poster.className = "poster"; poster.style.setProperty("--h", hueOf(id));
+  const small = document.createElement("small"); small.textContent = yr;
+  const b = document.createElement("b"); b.textContent = name;
+  poster.append(small, b);
+  const cap = document.createElement("figcaption");
+  cap.className = "title"; cap.textContent = name;
+  fig.append(poster, cap);
+  fig.addEventListener("pointerdown", onDown);
+  return fig;
+}
+
+function render(){
+  root.textContent = "";
+  TIERS.forEach(({t,c}) => {
+    const row = document.createElement("section");
+    row.className = "tier"; row.dataset.tier = t; row.style.setProperty("--tc", c);
+    const label = document.createElement("div"); label.className = "label"; label.textContent = t;
+    const cards = document.createElement("div"); cards.className = "cards";
+    state[t].forEach(id => cards.appendChild(makeCard(id, c)));
+    row.append(label, cards);
+    root.appendChild(row);
+  });
+}
+
+/* ---- 드래그 앤 드롭 (마우스·터치 공통) ---- */
+let drag = null;
+function onDown(e){
+  if(e.button !== undefined && e.button !== 0) return;
+  e.preventDefault();
+  const card = e.currentTarget;
+  const rect = card.getBoundingClientRect();
+  const ghost = card.cloneNode(true);
+  ghost.classList.add("ghost");
+  ghost.style.width = rect.width + "px";
+  document.body.appendChild(ghost);
+  card.classList.add("drag");
+  drag = {card, ghost, dx: e.clientX - rect.left, dy: e.clientY - rect.top};
+  moveGhost(e);
+  window.addEventListener("pointermove", onMove);
+  window.addEventListener("pointerup", onUp);
+  window.addEventListener("pointercancel", onUp);
+}
+function moveGhost(e){
+  drag.ghost.style.left = (e.clientX - drag.dx) + "px";
+  drag.ghost.style.top = (e.clientY - drag.dy) + "px";
+}
+function onMove(e){
+  if(!drag) return;
+  moveGhost(e);
+  document.querySelectorAll(".tier.over").forEach(el => el.classList.remove("over"));
+  const el = document.elementFromPoint(e.clientX, e.clientY);
+  const tier = el && el.closest(".tier");
+  if(!tier) return;
+  tier.classList.add("over");
+  const cards = tier.querySelector(".cards");
+  let before = null;
+  for(const c of cards.querySelectorAll(".card")){
+    if(c === drag.card) continue;
+    const r = c.getBoundingClientRect();
+    if(e.clientY < r.top || (e.clientY <= r.bottom && e.clientX < r.left + r.width/2)){ before = c; break; }
+  }
+  if(before){ if(drag.card.nextSibling !== before) cards.insertBefore(drag.card, before); }
+  else if(cards.lastElementChild !== drag.card) cards.appendChild(drag.card);
+  drag.card.style.setProperty("--tc", getComputedStyle(tier).getPropertyValue("--tc"));
+}
+function onUp(){
+  if(!drag) return;
+  window.removeEventListener("pointermove", onMove);
+  window.removeEventListener("pointerup", onUp);
+  window.removeEventListener("pointercancel", onUp);
+  drag.ghost.remove();
+  drag.card.classList.remove("drag");
+  document.querySelectorAll(".tier.over").forEach(el => el.classList.remove("over"));
+  drag = null;
+  document.querySelectorAll(".tier").forEach(tier => {
+    state[tier.dataset.tier] = [...tier.querySelectorAll(".card")].map(c => c.dataset.id);
+  });
+  save();
+  render();
+}
+
+document.getElementById("reset").addEventListener("click", () => {
+  if(confirm("모든 영화를 처음 티어 배치로 되돌릴까요?")){
+    state = JSON.parse(JSON.stringify(DEFAULT));
+    save(); render();
+  }
+});
+
+render();
+</script>
+</body>
+</html>
